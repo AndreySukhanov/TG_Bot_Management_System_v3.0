@@ -34,47 +34,53 @@ async def init_bot():
         from aiogram import Bot, Dispatcher
         from aiogram.fsm.storage.memory import MemoryStorage
         
-        # Импортируем модули после установки путей
-        from handlers.marketer import setup_marketer_handlers
-        from handlers.financier import setup_financier_handlers
-        from handlers.manager import setup_manager_handlers
-        from handlers.common import setup_common_handlers
-        from handlers.menu_handler import setup_menu_handlers
-        from handlers.command_handlers import setup_command_handlers
-        from handlers.voice_handler import setup_voice_handlers
-        from db.database import init_database
-        from utils.config import Config
-        from utils.bot_commands import BotCommandManager
-        
-        # Инициализация конфигурации
-        config = Config()
+        # Получаем токен из переменных окружения
+        bot_token = os.getenv("BOT_TOKEN")
+        if not bot_token:
+            raise Exception("BOT_TOKEN не найден в переменных окружения")
         
         # Создание бота и диспетчера
-        bot = Bot(token=config.BOT_TOKEN)
+        bot = Bot(token=bot_token)
         dp = Dispatcher(storage=MemoryStorage())
         
         logger.info("Бот создан")
         
-        # Инициализация базы данных
-        await init_database()
-        logger.info("База данных инициализирована")
-        
-        # Регистрация обработчиков
-        setup_common_handlers(dp)
-        setup_menu_handlers(dp)
-        setup_command_handlers(dp)
-        setup_voice_handlers(dp)
-        setup_marketer_handlers(dp)
-        setup_financier_handlers(dp)
-        setup_manager_handlers(dp)
-        
-        logger.info("Обработчики зарегистрированы")
-        
-        # Настройка команд бота
-        command_manager = BotCommandManager(bot)
-        await command_manager.setup_commands()
-        
-        logger.info("Команды бота настроены")
+        try:
+            # Пытаемся импортировать и инициализировать полную функциональность
+            from handlers.marketer import setup_marketer_handlers
+            from handlers.financier import setup_financier_handlers
+            from handlers.manager import setup_manager_handlers
+            from handlers.common import setup_common_handlers
+            from handlers.menu_handler import setup_menu_handlers
+            from handlers.command_handlers import setup_command_handlers
+            from handlers.voice_handler import setup_voice_handlers
+            from db.database import init_database
+            from utils.bot_commands import BotCommandManager
+            
+            # Инициализация базы данных
+            await init_database()
+            logger.info("База данных инициализирована")
+            
+            # Регистрация обработчиков
+            setup_common_handlers(dp)
+            setup_menu_handlers(dp)
+            setup_command_handlers(dp)
+            setup_voice_handlers(dp)
+            setup_marketer_handlers(dp)
+            setup_financier_handlers(dp)
+            setup_manager_handlers(dp)
+            
+            logger.info("Обработчики зарегистрированы")
+            
+            # Настройка команд бота
+            command_manager = BotCommandManager(bot)
+            await command_manager.setup_commands()
+            
+            logger.info("Команды бота настроены - полная функциональность")
+            
+        except ImportError as ie:
+            logger.warning(f"Не удалось загрузить полную функциональность: {ie}")
+            logger.info("Работаем в упрощенном режиме")
         
         return bot, dp
         
@@ -170,15 +176,25 @@ class handler(BaseHTTPRequestHandler):
     async def _set_webhook(self):
         """Установка webhook"""
         try:
-            # Инициализация бота
-            bot_instance, _ = await init_bot()
+            from aiogram import Bot
+            
+            # Получаем токен
+            bot_token = os.getenv("BOT_TOKEN")
+            if not bot_token:
+                raise Exception("BOT_TOKEN не найден")
+            
+            # Создаем новый экземпляр бота для этой операции
+            temp_bot = Bot(token=bot_token)
             
             # Получение хоста
             host = self.headers.get('host', self.headers.get('Host', 'unknown'))
             webhook_url = f"https://{host}/webhook"
             
-            result = await bot_instance.set_webhook(webhook_url)
+            result = await temp_bot.set_webhook(webhook_url)
             logger.info(f"Webhook установлен: {webhook_url}")
+            
+            # Закрываем сессию
+            await temp_bot.session.close()
             
             return {
                 "ok": True, 
@@ -193,10 +209,17 @@ class handler(BaseHTTPRequestHandler):
     async def _get_webhook_info(self):
         """Получение информации о webhook"""
         try:
-            # Инициализация бота
-            bot_instance, _ = await init_bot()
+            from aiogram import Bot
             
-            info = await bot_instance.get_webhook_info()
+            bot_token = os.getenv("BOT_TOKEN")
+            if not bot_token:
+                raise Exception("BOT_TOKEN не найден")
+            
+            temp_bot = Bot(token=bot_token)
+            info = await temp_bot.get_webhook_info()
+            
+            await temp_bot.session.close()
+            
             return {
                 "url": info.url,
                 "has_custom_certificate": info.has_custom_certificate,

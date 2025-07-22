@@ -2,19 +2,19 @@
   "rewrites": [
     {
       "source": "/webhook",
-      "destination": "/api/simple_bot"
+      "destination": "/api/index"
     },
     {
       "source": "/set_webhook",
-      "destination": "/api/simple_bot"
+      "destination": "/api/index"
     },
     {
       "source": "/webhook_info",
-      "destination": "/api/simple_bot"
+      "destination": "/api/index"
     },
     {
       "source": "/health",
-      "destination": "/api/simple_bot"
+      "destination": "/api/index"
     },
     {
       "source": "/dashboard/(.*)",
@@ -22,7 +22,7 @@
     },
     {
       "source": "/",
-      "destination": "/api/simple_bot"
+      "destination": "/api/index"
     }
   ]
 }
