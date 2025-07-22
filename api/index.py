@@ -46,139 +46,206 @@ async def init_bot():
         
         logger.info("✓ Бот и диспетчер созданы")
         
+        # Пытаемся импортировать модули по одному
+        logger.info("📦 Начинаем пошаговую инициализацию...")
+        
+        # Шаг 1: База данных
         try:
-            # Пытаемся импортировать и инициализировать полную функциональность
-            logger.info("Начинаем загрузку модулей...")
-            
-            # Импортируем по одному с логированием
-            logger.info("Импортируем базовые модули...")
+            logger.info("1️⃣ Импортируем db.database...")
             from db.database import init_database
             logger.info("✓ db.database импортирован")
             
-            # Инициализация базы данных
-            logger.info("Инициализируем базу данных...")
+            logger.info("1️⃣ Инициализируем базу данных...")
             await init_database()
             logger.info("✓ База данных инициализирована")
             
-            logger.info("Импортируем обработчики...")
+        except Exception as e:
+            logger.error(f"❌ Ошибка базы данных: {e}")
+            raise e
+        
+        # Шаг 2: Импорт обработчиков
+        handlers_imported = {}
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.common...")
             from handlers.common import setup_common_handlers
+            handlers_imported['common'] = setup_common_handlers
             logger.info("✓ handlers.common импортирован")
-            
-            from handlers.menu_handler import setup_menu_handlers  
-            logger.info("✓ handlers.menu_handler импортирован")
-            
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.common: {e}")
+            handlers_imported['common'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.command_handlers...")
             from handlers.command_handlers import setup_command_handlers
+            handlers_imported['command'] = setup_command_handlers
             logger.info("✓ handlers.command_handlers импортирован")
-            
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.command_handlers: {e}")
+            handlers_imported['command'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.menu_handler...")
+            from handlers.menu_handler import setup_menu_handlers
+            handlers_imported['menu'] = setup_menu_handlers
+            logger.info("✓ handlers.menu_handler импортирован")
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.menu_handler: {e}")
+            handlers_imported['menu'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.voice_handler...")
             from handlers.voice_handler import setup_voice_handlers
+            handlers_imported['voice'] = setup_voice_handlers
             logger.info("✓ handlers.voice_handler импортирован")
-            
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.voice_handler: {e}")
+            handlers_imported['voice'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.marketer...")
             from handlers.marketer import setup_marketer_handlers
+            handlers_imported['marketer'] = setup_marketer_handlers
             logger.info("✓ handlers.marketer импортирован")
-            
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.marketer: {e}")
+            handlers_imported['marketer'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.financier...")
             from handlers.financier import setup_financier_handlers
+            handlers_imported['financier'] = setup_financier_handlers
             logger.info("✓ handlers.financier импортирован")
-            
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.financier: {e}")
+            handlers_imported['financier'] = None
+        
+        try:
+            logger.info("2️⃣ Импортируем handlers.manager...")
             from handlers.manager import setup_manager_handlers
+            handlers_imported['manager'] = setup_manager_handlers
             logger.info("✓ handlers.manager импортирован")
-            
-            from utils.bot_commands import BotCommandManager
-            logger.info("✓ utils.bot_commands импортирован")
-            
-            # КРИТИЧНО: Регистрация обработчиков в правильном порядке
-            logger.info("🔧 Начинаем регистрацию обработчиков...")
-            
-            # 1. Сначала специфичные обработчики
+        except Exception as e:
+            logger.error(f"❌ Ошибка импорта handlers.manager: {e}")
+            handlers_imported['manager'] = None
+        
+        # Шаг 3: Регистрация обработчиков
+        logger.info("3️⃣ Начинаем регистрацию обработчиков...")
+        
+        # Регистрируем только те, которые успешно импортированы
+        if handlers_imported['command']:
             try:
-                setup_command_handlers(dp)
-                cmd_count = len(dp.message.handlers)
-                logger.info(f"✓ Command handlers зарегистрированы (handlers: {cmd_count})")
+                handlers_imported['command'](dp)
+                logger.info(f"✓ Command handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_command_handlers: {e}")
-            
+                logger.error(f"❌ Ошибка регистрации command handlers: {e}")
+        
+        if handlers_imported['voice']:
             try:
-                setup_voice_handlers(dp)
-                voice_count = len(dp.message.handlers)
-                logger.info(f"✓ Voice handlers зарегистрированы (total handlers: {voice_count})")
+                handlers_imported['voice'](dp)
+                logger.info(f"✓ Voice handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_voice_handlers: {e}")
-            
+                logger.error(f"❌ Ошибка регистрации voice handlers: {e}")
+        
+        if handlers_imported['marketer']:
             try:
-                setup_marketer_handlers(dp)
-                marketer_count = len(dp.message.handlers)
-                logger.info(f"✓ Marketer handlers зарегистрированы (total handlers: {marketer_count})")
+                handlers_imported['marketer'](dp)
+                logger.info(f"✓ Marketer handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_marketer_handlers: {e}")
-            
+                logger.error(f"❌ Ошибка регистрации marketer handlers: {e}")
+        
+        if handlers_imported['financier']:
             try:
-                setup_financier_handlers(dp)
-                financier_count = len(dp.message.handlers)
-                logger.info(f"✓ Financier handlers зарегистрированы (total handlers: {financier_count})")
+                handlers_imported['financier'](dp)
+                logger.info(f"✓ Financier handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_financier_handlers: {e}")
-            
+                logger.error(f"❌ Ошибка регистрации financier handlers: {e}")
+        
+        if handlers_imported['manager']:
             try:
-                setup_manager_handlers(dp)
-                manager_count = len(dp.message.handlers)
-                logger.info(f"✓ Manager handlers зарегистрированы (total handlers: {manager_count})")
+                handlers_imported['manager'](dp)
+                logger.info(f"✓ Manager handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_manager_handlers: {e}")
-            
+                logger.error(f"❌ Ошибка регистрации manager handlers: {e}")
+        
+        if handlers_imported['menu']:
             try:
-                setup_menu_handlers(dp)
-                menu_count = len(dp.message.handlers)
-                logger.info(f"✓ Menu handlers зарегистрированы (total handlers: {menu_count})")
+                handlers_imported['menu'](dp)
+                logger.info(f"✓ Menu handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_menu_handlers: {e}")
-            
-            # 2. Общие обработчики идут ПОСЛЕДНИМИ (включая default)
+                logger.error(f"❌ Ошибка регистрации menu handlers: {e}")
+        
+        # Common handlers - ВСЕГДА последними
+        if handlers_imported['common']:
             try:
-                setup_common_handlers(dp)
-                total_count = len(dp.message.handlers)
-                logger.info(f"✓ Common handlers зарегистрированы (total handlers: {total_count})")
+                handlers_imported['common'](dp)
+                logger.info(f"✓ Common handlers зарегистрированы ({len(dp.message.handlers)} total)")
             except Exception as e:
-                logger.error(f"❌ Ошибка в setup_common_handlers: {e}")
-            
-            # 3. Финальная проверка
-            final_handlers = len(dp.message.handlers)
-            logger.info(f"🎯 ИТОГО ЗАРЕГИСТРИРОВАНО MESSAGE HANDLERS: {final_handlers}")
-            
+                logger.error(f"❌ Ошибка регистрации common handlers: {e}")
+        
+        # Финальная проверка
+        final_handlers = len(dp.message.handlers)
+        logger.info(f"🎯 ИТОГО ЗАРЕГИСТРИРОВАНО MESSAGE HANDLERS: {final_handlers}")
+        
+        if final_handlers == 0:
+            logger.error("❌ НЕ ЗАРЕГИСТРИРОВАНО НИ ОДНОГО MESSAGE HANDLER!")
+            logger.info("🆘 Добавляем минимальный набор обработчиков...")
+            await add_minimal_handlers(dp)
+        else:
             # Выводим список всех обработчиков
             for i, handler in enumerate(dp.message.handlers):
                 handler_name = handler.callback.__name__
-                filters_info = str(handler.filters) if handler.filters else "No filters"
-                logger.info(f"  Handler {i}: {handler_name} | Filters: {filters_info}")
-            
-            if final_handlers == 0:
-                logger.error("❌ НЕ ЗАРЕГИСТРИРОВАНО НИ ОДНОГО MESSAGE HANDLER!")
-                raise Exception("Message handlers не зарегистрированы")
-            
-            # Настройка команд бота
-            logger.info("Настраиваем команды бота...")
-            try:
-                command_manager = BotCommandManager(bot)
-                await command_manager.setup_commands()
-                logger.info("✓ Команды бота настроены")
-            except Exception as e:
-                logger.error(f"❌ Ошибка настройки команд: {e}")
-            
-            logger.info("🎉 ПОЛНАЯ ФУНКЦИОНАЛЬНОСТЬ ЗАГРУЖЕНА УСПЕШНО!")
-            
-        except ImportError as ie:
-            logger.error(f"❌ Ошибка импорта: {ie}")
-            # Добавляем базовый обработчик в случае ошибки
-            await add_emergency_handler(dp)
-            
-        except Exception as e:
-            logger.error(f"❌ Общая ошибка при инициализации: {e}")
-            # Добавляем базовый обработчик в случае ошибки
-            await add_emergency_handler(dp)
+                logger.info(f"  📝 Handler {i}: {handler_name}")
         
+        # Шаг 4: Команды бота (опционально)
+        try:
+            logger.info("4️⃣ Импортируем utils.bot_commands...")
+            from utils.bot_commands import BotCommandManager
+            logger.info("✓ utils.bot_commands импортирован")
+            
+            logger.info("4️⃣ Настраиваем команды бота...")
+            command_manager = BotCommandManager(bot)
+            await command_manager.setup_commands()
+            logger.info("✓ Команды бота настроены")
+        except Exception as e:
+            logger.error(f"❌ Ошибка настройки команд (не критично): {e}")
+        
+        logger.info("🎉 ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА УСПЕШНО!")
         return bot, dp
         
     except Exception as e:
-        logger.error(f"Критическая ошибка инициализации бота: {e}")
-        raise
+        logger.error(f"💥 КРИТИЧЕСКАЯ ОШИБКА ИНИЦИАЛИЗАЦИИ: {e}")
+        logger.error(f"Тип ошибки: {e.__class__.__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Создаем базовый бот с аварийным обработчиком
+        if bot is None:
+            bot = Bot(token=os.getenv("BOT_TOKEN"))
+            dp = Dispatcher(storage=MemoryStorage())
+            await add_emergency_handler(dp)
+        
+        return bot, dp
+
+async def add_minimal_handlers(dp):
+    """Добавляет минимальный набор обработчиков"""
+    from aiogram import types
+    from aiogram.filters import Command
+    
+    async def minimal_start(message: types.Message):
+        await message.reply("🤖 Бот запущен в минимальном режиме. Некоторые функции недоступны.")
+    
+    async def minimal_help(message: types.Message):
+        await message.reply("ℹ️ Справка временно недоступна. Бот работает в ограниченном режиме.")
+    
+    async def minimal_default(message: types.Message):
+        await message.reply("🤖 Бот в ограниченном режиме. Используйте /start")
+    
+    dp.message.register(minimal_start, Command("start"))
+    dp.message.register(minimal_help, Command("help"))
+    dp.message.register(minimal_default)
+    
+    logger.info("✓ Минимальные обработчики добавлены")
 
 async def add_emergency_handler(dp):
     """Добавляет базовый обработчик в случае ошибки инициализации"""
