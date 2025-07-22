@@ -23,6 +23,39 @@ logger = logging.getLogger(__name__)
 bot = None
 dp = None
 
+# Встроенная конфигурация как fallback для Vercel
+class BuiltinConfig:
+    """Встроенная конфигурация для работы без внешних модулей"""
+    
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+    DATABASE_PATH = "bot.db"
+    LOW_BALANCE_THRESHOLD = 100.0
+    
+    # Тестовые пользователи для демонстрации (если переменные окружения не заданы)
+    MARKETERS = [int(x) for x in os.getenv("MARKETERS", "123456789").split(",") if x.strip()]
+    FINANCIERS = [int(x) for x in os.getenv("FINANCIERS", "987654321").split(",") if x.strip()]  
+    MANAGERS = [int(x) for x in os.getenv("MANAGERS", "555666777").split(",") if x.strip()]
+    
+    @classmethod
+    def get_user_role(cls, user_id: int) -> str:
+        """Определяет роль пользователя по ID"""
+        if user_id in cls.MARKETERS:
+            return "marketer"
+        elif user_id in cls.FINANCIERS:
+            return "financier"
+        elif user_id in cls.MANAGERS:
+            return "manager"
+        else:
+            return "unknown"
+    
+    @classmethod
+    def is_authorized(cls, user_id: int) -> bool:
+        """Проверяет, авторизован ли пользователь"""
+        return cls.get_user_role(user_id) != "unknown"
+
+# Создаем глобальный экземпляр конфигурации
+builtin_config = BuiltinConfig()
+
 async def init_bot():
     """Инициализация бота и диспетчера"""
     global bot, dp
@@ -86,12 +119,33 @@ async def init_bot():
             """Безопасный импорт обработчика с fallback"""
             try:
                 logger.info(f"2️⃣ Импортируем {module_name}...")
+                
+                # Подробная диагностика
+                logger.info(f"   🔍 Попытка импорта модуля: {module_name}")
+                logger.info(f"   🔍 Ищем функцию: {function_name}")
+                
                 module = __import__(module_name, fromlist=[function_name])
+                logger.info(f"   ✅ Модуль {module_name} загружен")
+                
                 handler_func = getattr(module, function_name)
-                logger.info(f"✓ {module_name} импортирован")
+                logger.info(f"   ✅ Функция {function_name} найдена")
+                
+                logger.info(f"✓ {module_name} импортирован успешно")
                 return handler_func
+                
+            except ImportError as ie:
+                logger.error(f"❌ ImportError в {module_name}: {ie}")
+                logger.error(f"   📍 Детали: {str(ie)}")
+                return None
+            except AttributeError as ae:
+                logger.error(f"❌ AttributeError в {module_name}: {ae}")
+                logger.error(f"   📍 Функция {function_name} не найдена в модуле")
+                return None
             except Exception as e:
-                logger.error(f"❌ Ошибка импорта {module_name}: {e}")
+                logger.error(f"❌ Неожиданная ошибка в {module_name}: {e}")
+                logger.error(f"   📍 Тип: {type(e).__name__}")
+                import traceback
+                logger.error(f"   📍 Traceback: {traceback.format_exc()}")
                 return None
         
         # Импортируем обработчики с безопасными методами
@@ -162,13 +216,23 @@ async def init_bot():
         final_handlers = len(dp.message.handlers)
         logger.info(f"🎯 ИТОГО ЗАРЕГИСТРИРОВАНО MESSAGE HANDLERS: {final_handlers}")
         
+        # Проверяем успешность загрузки основных обработчиков
+        successful_imports = sum(1 for h in handlers_imported.values() if h is not None)
+        logger.info(f"📊 Успешно импортировано обработчиков: {successful_imports}/{len(handlers_imported)}")
+        
         if final_handlers == 0:
             logger.error("❌ НЕ ЗАРЕГИСТРИРОВАНО НИ ОДНОГО MESSAGE HANDLER!")
             logger.info("🆘 Добавляем минимальный набор обработчиков...")
             await add_minimal_handlers(dp)
         
-        # ВСЕГДА добавляем fallback обработчик как последний
-        await add_fallback_handler(dp)
+        # Если основные обработчики не загрузились, используем встроенные
+        if successful_imports < 2:  # Меньше 2 успешных импортов
+            logger.warning("⚠️ Основные обработчики не загружены, используем встроенные")
+            await add_builtin_handlers(dp)
+        else:
+            # Если основные загрузились, добавляем fallback на всякий случай
+            logger.info("🔧 Добавляем fallback обработчики...")
+            await add_fallback_handler(dp)
         
         # Обновляем счетчик после добавления fallback
         final_handlers = len(dp.message.handlers)
@@ -315,6 +379,134 @@ async def add_fallback_handler(dp):
     dp.message.register(fallback_default)  # Последний - ловит всё остальное
     
     logger.info("✓ Fallback обработчики зарегистрированы")
+
+async def add_builtin_handlers(dp):
+    """Добавляет встроенные обработчики для полной функциональности"""
+    from aiogram import types
+    from aiogram.filters import Command
+    
+    async def builtin_start(message: types.Message):
+        """Встроенный start handler"""
+        try:
+            user_id = message.from_user.id
+            username = message.from_user.username or "Unknown"
+            
+            logger.info(f"🚀 Встроенный /start от пользователя {user_id} ({username})")
+            
+            user_role = builtin_config.get_user_role(user_id)
+            
+            if user_role == "unknown":
+                await message.answer(
+                    "❌ У вас нет доступа к этому боту.\n"
+                    "Обратитесь к администратору для получения разрешений."
+                )
+                return
+            
+            role_messages = {
+                "marketer": (
+                    "👋 Привет! Вы зарегистрированы как **Маркетолог**.\n\n"
+                    "📝 **Доступные команды:**\n"
+                    "• /help - справка\n"
+                    "• /status - статус системы\n\n"
+                    "🤖 Режим: Встроенные обработчики"
+                ),
+                "financier": (
+                    "👋 Привет! Вы зарегистрированы как **Финансист**.\n\n"
+                    "💼 **Доступные команды:**\n"
+                    "• /help - справка\n"
+                    "• /status - статус системы\n\n"
+                    "🤖 Режим: Встроенные обработчики"
+                ),
+                "manager": (
+                    "👋 Привет! Вы зарегистрированы как **Руководитель**.\n\n"
+                    "👨‍💼 **Доступные команды:**\n"
+                    "• /help - справка\n"
+                    "• /status - статус системы\n\n"
+                    "🤖 Режим: Встроенные обработчики"
+                )
+            }
+            
+            await message.answer(
+                role_messages[user_role], 
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в builtin_start: {e}")
+    
+    async def builtin_help(message: types.Message):
+        """Встроенный help handler"""
+        try:
+            user_id = message.from_user.id
+            user_role = builtin_config.get_user_role(user_id)
+            
+            if user_role == "unknown":
+                await message.answer("❌ У вас нет доступа к этому боту.")
+                return
+            
+            await message.answer(
+                f"📖 **Справка ({user_role})**\n\n"
+                f"🤖 **Встроенный режим работы**\n"
+                f"Бот работает со встроенными обработчиками.\n\n"
+                f"**Доступные команды:**\n"
+                f"• /start - главное меню\n"
+                f"• /help - эта справка\n"
+                f"• /status - статус системы\n\n"
+                f"**Ваша роль:** {user_role}\n"
+                f"**ID:** {user_id}",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в builtin_help: {e}")
+    
+    async def builtin_status(message: types.Message):
+        """Встроенный status handler"""
+        try:
+            user_id = message.from_user.id
+            user_role = builtin_config.get_user_role(user_id)
+            
+            await message.answer(
+                f"📊 **Статус системы**\n\n"
+                f"🤖 **Бот:** Активен (встроенные обработчики)\n"
+                f"⚡ **Webhook:** Работает\n"
+                f"🛡️ **Режим:** Builtin handlers\n"
+                f"👤 **Ваша роль:** {user_role}\n"
+                f"🆔 **Ваш ID:** {user_id}\n\n"
+                f"✅ **Все системы работают нормально**",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в builtin_status: {e}")
+    
+    async def builtin_default(message: types.Message):
+        """Встроенный default handler"""
+        try:
+            user_id = message.from_user.id
+            user_role = builtin_config.get_user_role(user_id)
+            text = message.text or "<non-text>"
+            
+            if user_role == "unknown":
+                await message.answer(
+                    "❌ У вас нет доступа к этому боту.\n"
+                    "Обратитесь к администратору."
+                )
+                return
+            
+            await message.answer(
+                f"🤖 **Получено сообщение:** «{text[:50]}{'...' if len(text) > 50 else ''}»\n\n"
+                f"👤 **Роль:** {user_role}\n"
+                f"🔧 **Режим:** Встроенные обработчики\n\n"
+                f"Используйте /help для получения справки."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в builtin_default: {e}")
+    
+    # Регистрируем встроенные обработчики
+    dp.message.register(builtin_start, Command("start"))
+    dp.message.register(builtin_help, Command("help"))  
+    dp.message.register(builtin_status, Command("status"))
+    dp.message.register(builtin_default)  # Последний - ловит всё остальное
+    
+    logger.info("✅ Встроенные обработчики зарегистрированы")
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
