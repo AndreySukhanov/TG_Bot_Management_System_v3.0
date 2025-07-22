@@ -564,13 +564,13 @@ class handler(BaseHTTPRequestHandler):
             
             # Webhook endpoint
             if self.path == '/webhook':
-                result = asyncio.run(self._handle_webhook())
+                result = self._run_async_safe(self._handle_webhook())
                 self._send_response(200, result)
                 return
             
             # Установка webhook через POST
             if self.path == '/set_webhook':
-                result = asyncio.run(self._set_webhook())
+                result = self._run_async_safe(self._set_webhook())
                 self._send_response(200, result)
                 return
             
@@ -580,6 +580,49 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.error(f"Ошибка POST запроса: {e}")
             self._send_response(500, {"error": str(e)})
+    
+    def _run_async_safe(self, coro):
+        """Безопасный запуск async функции в serverless окружении"""
+        try:
+            # Проверяем, есть ли уже event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                # Если loop закрыт, создаем новый
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                logger.info("🔄 Создан новый event loop")
+            
+            # Если loop запущен в другом потоке, пробуем nest_asyncio
+            if loop.is_running():
+                try:
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    logger.info("🔄 Применен nest_asyncio")
+                    return loop.run_until_complete(coro)
+                except ImportError:
+                    logger.warning("⚠️ nest_asyncio не найден, создаем новый loop")
+                    # Создаем новый loop как fallback
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    result = new_loop.run_until_complete(coro)
+                    new_loop.close()
+                    return result
+            else:
+                return loop.run_until_complete(coro)
+                
+        except Exception as e:
+            logger.error(f"Ошибка в event loop: {e}")
+            # Последний резерв - создаем полностью новый loop
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(coro)
+                new_loop.close()
+                logger.info("✅ Использован резервный event loop")
+                return result
+            except Exception as e2:
+                logger.error(f"💥 Критическая ошибка event loop: {e2}")
+                raise
     
     async def _handle_webhook(self):
         """Обработка webhook от Telegram"""
