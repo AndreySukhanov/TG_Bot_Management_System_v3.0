@@ -112,13 +112,25 @@ class handler(BaseHTTPRequestHandler):
     async def _set_webhook(self):
         """Установка webhook"""
         try:
-            bot_instance = await init_simple_bot()
+            from aiogram import Bot
+            
+            # Получаем токен
+            bot_token = os.getenv("BOT_TOKEN")
+            if not bot_token:
+                raise Exception("BOT_TOKEN не найден")
+            
+            # Создаем новый экземпляр бота для этой операции
+            temp_bot = Bot(token=bot_token)
             
             host = self.headers.get('host', self.headers.get('Host', 'unknown'))
             webhook_url = f"https://{host}/webhook"
             
-            result = await bot_instance.set_webhook(webhook_url)
+            # Устанавливаем webhook
+            result = await temp_bot.set_webhook(webhook_url)
             logger.info(f"Webhook установлен: {webhook_url}")
+            
+            # Закрываем сессию
+            await temp_bot.session.close()
             
             return {
                 "ok": True, 
@@ -133,9 +145,17 @@ class handler(BaseHTTPRequestHandler):
     async def _get_webhook_info(self):
         """Получение информации о webhook"""
         try:
-            bot_instance = await init_simple_bot()
+            from aiogram import Bot
             
-            info = await bot_instance.get_webhook_info()
+            bot_token = os.getenv("BOT_TOKEN")
+            if not bot_token:
+                raise Exception("BOT_TOKEN не найден")
+            
+            temp_bot = Bot(token=bot_token)
+            info = await temp_bot.get_webhook_info()
+            
+            await temp_bot.session.close()
+            
             return {
                 "url": info.url,
                 "has_custom_certificate": info.has_custom_certificate,
