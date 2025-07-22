@@ -522,13 +522,13 @@ class handler(BaseHTTPRequestHandler):
             
             # Webhook endpoint
             if self.path == '/webhook':
-                result = self._run_async_safe(self._handle_webhook())
+                result = self._run_async_safe(self._handle_webhook)
                 self._send_response(200, result)
                 return
             
             # Установка webhook через POST
             if self.path == '/set_webhook':
-                result = self._run_async_safe(self._set_webhook())
+                result = self._run_async_safe(self._set_webhook)
                 self._send_response(200, result)
                 return
             
@@ -539,7 +539,7 @@ class handler(BaseHTTPRequestHandler):
             logger.error(f"Ошибка POST запроса: {e}")
             self._send_response(500, {"error": str(e)})
     
-    def _run_async_safe(self, coro):
+    def _run_async_safe(self, coro_func):
         """Безопасный запуск async функции в serverless окружении"""
         # Всегда создаем новый event loop для каждого webhook запроса
         # Это самый надежный способ в serverless окружении
@@ -547,7 +547,8 @@ class handler(BaseHTTPRequestHandler):
             logger.info("🔄 Создаем новый event loop для webhook")
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
-            result = new_loop.run_until_complete(coro)
+            # Вызываем функцию для создания нового coroutine
+            result = new_loop.run_until_complete(coro_func())
             new_loop.close()
             logger.info("✅ Webhook обработан с новым event loop")
             return result
@@ -567,11 +568,11 @@ class handler(BaseHTTPRequestHandler):
                         import nest_asyncio
                         nest_asyncio.apply()
                         logger.info("🔄 Применен nest_asyncio в fallback")
-                        return loop.run_until_complete(coro)
+                        return loop.run_until_complete(coro_func())
                     except ImportError:
                         raise Exception("nest_asyncio недоступен и loop запущен")
                 else:
-                    return loop.run_until_complete(coro)
+                    return loop.run_until_complete(coro_func())
                     
             except Exception as e2:
                 logger.error(f"💥 Все методы event loop не сработали: {e2}")
