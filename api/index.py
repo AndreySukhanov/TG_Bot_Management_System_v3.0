@@ -52,7 +52,22 @@ async def init_bot():
         # Шаг 1: База данных
         try:
             logger.info("1️⃣ Импортируем db.database...")
-            from db.database import init_database
+            try:
+                from db.database import init_database
+            except ImportError:
+                # Альтернативный путь для Vercel
+                import sys
+                import importlib.util
+                
+                db_path = os.path.join(root_dir, 'db', 'database.py')
+                if os.path.exists(db_path):
+                    spec = importlib.util.spec_from_file_location("database", db_path)
+                    database_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(database_module)
+                    init_database = database_module.init_database
+                else:
+                    raise ImportError("Не найден файл db/database.py")
+                    
             logger.info("✓ db.database импортирован")
             
             logger.info("1️⃣ Инициализируем базу данных...")
@@ -61,73 +76,33 @@ async def init_bot():
             
         except Exception as e:
             logger.error(f"❌ Ошибка базы данных: {e}")
-            raise e
+            # Не поднимаем ошибку - работаем без базы данных
+            logger.warning("⚠️ Работаем без базы данных - будет только fallback функциональность")
         
         # Шаг 2: Импорт обработчиков
         handlers_imported = {}
         
-        try:
-            logger.info("2️⃣ Импортируем handlers.common...")
-            from handlers.common import setup_common_handlers
-            handlers_imported['common'] = setup_common_handlers
-            logger.info("✓ handlers.common импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.common: {e}")
-            handlers_imported['common'] = None
+        def safe_import_handler(module_name: str, function_name: str):
+            """Безопасный импорт обработчика с fallback"""
+            try:
+                logger.info(f"2️⃣ Импортируем {module_name}...")
+                module = __import__(module_name, fromlist=[function_name])
+                handler_func = getattr(module, function_name)
+                logger.info(f"✓ {module_name} импортирован")
+                return handler_func
+            except Exception as e:
+                logger.error(f"❌ Ошибка импорта {module_name}: {e}")
+                return None
         
-        try:
-            logger.info("2️⃣ Импортируем handlers.command_handlers...")
-            from handlers.command_handlers import setup_command_handlers
-            handlers_imported['command'] = setup_command_handlers
-            logger.info("✓ handlers.command_handlers импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.command_handlers: {e}")
-            handlers_imported['command'] = None
+        # Импортируем обработчики с безопасными методами
+        handlers_imported['common'] = safe_import_handler('handlers.common', 'setup_common_handlers')
         
-        try:
-            logger.info("2️⃣ Импортируем handlers.menu_handler...")
-            from handlers.menu_handler import setup_menu_handlers
-            handlers_imported['menu'] = setup_menu_handlers
-            logger.info("✓ handlers.menu_handler импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.menu_handler: {e}")
-            handlers_imported['menu'] = None
-        
-        try:
-            logger.info("2️⃣ Импортируем handlers.voice_handler...")
-            from handlers.voice_handler import setup_voice_handlers
-            handlers_imported['voice'] = setup_voice_handlers
-            logger.info("✓ handlers.voice_handler импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.voice_handler: {e}")
-            handlers_imported['voice'] = None
-        
-        try:
-            logger.info("2️⃣ Импортируем handlers.marketer...")
-            from handlers.marketer import setup_marketer_handlers
-            handlers_imported['marketer'] = setup_marketer_handlers
-            logger.info("✓ handlers.marketer импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.marketer: {e}")
-            handlers_imported['marketer'] = None
-        
-        try:
-            logger.info("2️⃣ Импортируем handlers.financier...")
-            from handlers.financier import setup_financier_handlers
-            handlers_imported['financier'] = setup_financier_handlers
-            logger.info("✓ handlers.financier импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.financier: {e}")
-            handlers_imported['financier'] = None
-        
-        try:
-            logger.info("2️⃣ Импортируем handlers.manager...")
-            from handlers.manager import setup_manager_handlers
-            handlers_imported['manager'] = setup_manager_handlers
-            logger.info("✓ handlers.manager импортирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка импорта handlers.manager: {e}")
-            handlers_imported['manager'] = None
+        handlers_imported['command'] = safe_import_handler('handlers.command_handlers', 'setup_command_handlers')
+        handlers_imported['menu'] = safe_import_handler('handlers.menu_handler', 'setup_menu_handlers')
+        handlers_imported['voice'] = safe_import_handler('handlers.voice_handler', 'setup_voice_handlers')
+        handlers_imported['marketer'] = safe_import_handler('handlers.marketer', 'setup_marketer_handlers')
+        handlers_imported['financier'] = safe_import_handler('handlers.financier', 'setup_financier_handlers')
+        handlers_imported['manager'] = safe_import_handler('handlers.manager', 'setup_manager_handlers')
         
         # Шаг 3: Регистрация обработчиков
         logger.info("3️⃣ Начинаем регистрацию обработчиков...")
@@ -207,13 +182,16 @@ async def init_bot():
         # Шаг 4: Команды бота (опционально)
         try:
             logger.info("4️⃣ Импортируем utils.bot_commands...")
-            from utils.bot_commands import BotCommandManager
-            logger.info("✓ utils.bot_commands импортирован")
-            
-            logger.info("4️⃣ Настраиваем команды бота...")
-            command_manager = BotCommandManager(bot)
-            await command_manager.setup_commands()
-            logger.info("✓ Команды бота настроены")
+            bot_commands_func = safe_import_handler('utils.bot_commands', 'BotCommandManager')
+            if bot_commands_func:
+                logger.info("✓ utils.bot_commands импортирован")
+                
+                logger.info("4️⃣ Настраиваем команды бота...")
+                command_manager = bot_commands_func(bot)
+                await command_manager.setup_commands()
+                logger.info("✓ Команды бота настроены")
+            else:
+                logger.warning("⚠️ Команды бота не настроены - модуль не импортирован")
         except Exception as e:
             logger.error(f"❌ Ошибка настройки команд (не критично): {e}")
         
