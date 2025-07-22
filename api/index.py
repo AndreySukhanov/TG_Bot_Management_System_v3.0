@@ -7,7 +7,13 @@ import sys
 from urllib.parse import parse_qs
 
 # Добавляем корневую директорию в path для импорта модулей
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+sys.path.insert(0, root_dir)
+sys.path.insert(0, os.path.join(root_dir, 'utils'))
+sys.path.insert(0, os.path.join(root_dir, 'handlers'))
+sys.path.insert(0, os.path.join(root_dir, 'db'))
+sys.path.insert(0, os.path.join(root_dir, 'nlp'))
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)

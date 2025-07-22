@@ -26,12 +26,12 @@
     }
   ],
   "env": {
-    "PYTHONPATH": "."
+    "PYTHONPATH": ".:./utils:./handlers:./db:./nlp"
   },
   "regions": ["fra1"],
   "build": {
     "env": {
-      "PYTHONPATH": "."
+      "PYTHONPATH": ".:./utils:./handlers:./db:./nlp"
     }
   }
 }
