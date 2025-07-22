@@ -348,7 +348,7 @@ class handler(BaseHTTPRequestHandler):
             if self.path in ['/', '/health']:
                 # Инициализируем бота при первом запросе чтобы убедиться что всё работает
                 try:
-                    bot_instance, dp_instance = await asyncio.create_task(init_bot())
+                    bot_instance, dp_instance = asyncio.run(init_bot())
                     handlers_count = len(dp_instance.message.handlers) if dp_instance.message.handlers else 0
                     response = {
                         "status": "ok", 
