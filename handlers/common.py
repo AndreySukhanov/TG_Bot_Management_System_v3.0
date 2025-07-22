@@ -220,4 +220,4 @@ def setup_common_handlers(dp: Dispatcher):
     # Обработчик по умолчанию для ВСЕХ необработанных сообщений (ПОСЛЕДНИЙ!)
     dp.message.register(default_handler)
     
-    logger.info("✓ Обработчики common зарегистрированы")    
+    logger.info("✓ Обработчики common зарегистрированы")
