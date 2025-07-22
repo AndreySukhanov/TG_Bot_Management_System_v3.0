@@ -191,11 +191,18 @@ async def init_bot():
             logger.error("❌ НЕ ЗАРЕГИСТРИРОВАНО НИ ОДНОГО MESSAGE HANDLER!")
             logger.info("🆘 Добавляем минимальный набор обработчиков...")
             await add_minimal_handlers(dp)
-        else:
-            # Выводим список всех обработчиков
-            for i, handler in enumerate(dp.message.handlers):
-                handler_name = handler.callback.__name__
-                logger.info(f"  📝 Handler {i}: {handler_name}")
+        
+        # ВСЕГДА добавляем fallback обработчик как последний
+        await add_fallback_handler(dp)
+        
+        # Обновляем счетчик после добавления fallback
+        final_handlers = len(dp.message.handlers)
+        logger.info(f"🎯 ИТОГО MESSAGE HANDLERS (с fallback): {final_handlers}")
+        
+        # Выводим список всех обработчиков
+        for i, handler in enumerate(dp.message.handlers):
+            handler_name = handler.callback.__name__ if handler.callback else "Unknown"
+            logger.info(f"  📝 Handler {i}: {handler_name}")
         
         # Шаг 4: Команды бота (опционально)
         try:
@@ -257,6 +264,79 @@ async def add_emergency_handler(dp):
     
     dp.message.register(emergency_handler)
     logger.info("✓ Аварийный обработчик зарегистрирован")
+
+async def add_fallback_handler(dp):
+    """Добавляет fallback обработчик который ТОЧНО сработает"""
+    from aiogram import types
+    from aiogram.filters import Command
+    
+    async def fallback_start(message: types.Message):
+        """Fallback start handler"""
+        try:
+            user_id = message.from_user.id
+            logger.info(f"🆘 Fallback /start от пользователя {user_id}")
+            await message.reply(
+                "🤖 Бот запущен в режиме совместимости.\n"
+                "Некоторые функции могут быть ограничены.\n\n"
+                "Попробуйте:\n"
+                "• /help - справка\n"
+                "• /status - статус системы"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в fallback_start: {e}")
+    
+    async def fallback_help(message: types.Message):
+        """Fallback help handler"""
+        try:
+            user_id = message.from_user.id
+            logger.info(f"🆘 Fallback /help от пользователя {user_id}")
+            await message.reply(
+                "ℹ️ Справка (режим совместимости)\n\n"
+                "Доступные команды:\n"
+                "• /start - перезапуск\n"
+                "• /help - эта справка\n"
+                "• /status - статус бота\n\n"
+                "Для полной функциональности обратитесь к администратору."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в fallback_help: {e}")
+    
+    async def fallback_status(message: types.Message):
+        """Fallback status handler"""
+        try:
+            user_id = message.from_user.id
+            logger.info(f"🆘 Fallback /status от пользователя {user_id}")
+            await message.reply(
+                "📊 Статус системы:\n\n"
+                "🤖 Бот: Активен (режим совместимости)\n"
+                "⚡ Webhook: Работает\n"
+                "🛡️ Режим: Fallback handlers\n\n"
+                "Если видите это сообщение, основные обработчики не загружены."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в fallback_status: {e}")
+    
+    async def fallback_default(message: types.Message):
+        """Универсальный fallback обработчик"""
+        try:
+            user_id = message.from_user.id
+            text = message.text or "<non-text>"
+            logger.info(f"🆘 Fallback default для {user_id}: {text[:50]}")
+            await message.reply(
+                f"🤖 Получено сообщение: «{text[:50]}{'...' if len(text) > 50 else ''}»\n\n"
+                f"Бот работает в ограниченном режиме.\n"
+                f"Используйте /help для получения справки."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в fallback_default: {e}")
+    
+    # Регистрируем fallback обработчики 
+    dp.message.register(fallback_start, Command("start"))
+    dp.message.register(fallback_help, Command("help"))  
+    dp.message.register(fallback_status, Command("status"))
+    dp.message.register(fallback_default)  # Последний - ловит всё остальное
+    
+    logger.info("✓ Fallback обработчики зарегистрированы")
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -339,22 +419,52 @@ class handler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length).decode('utf-8')
             data = json.loads(post_data)
             
-            logger.info(f"Получено обновление: {json.dumps(data, ensure_ascii=False)[:200]}...")
+            logger.info(f"📨 Получено обновление: {json.dumps(data, ensure_ascii=False)[:200]}...")
             
             # Инициализация бота
             bot_instance, dp_instance = await init_bot()
             
-            # Создание Update объекта и обработка
+            # ДИАГНОСТИКА: Проверяем что обработчики есть
+            handlers_count = len(dp_instance.message.handlers) if dp_instance.message.handlers else 0
+            logger.info(f"🎯 Доступно message handlers: {handlers_count}")
+            
+            if handlers_count == 0:
+                logger.error("❌ НЕТ ОБРАБОТЧИКОВ СООБЩЕНИЙ!")
+                logger.info("🆘 Добавляем экстренные обработчики...")
+                await add_minimal_handlers(dp_instance)
+                handlers_count = len(dp_instance.message.handlers)
+                logger.info(f"✅ Добавлено экстренных обработчиков: {handlers_count}")
+            else:
+                # Показываем список обработчиков для диагностики
+                for i, handler in enumerate(dp_instance.message.handlers):
+                    handler_name = handler.callback.__name__ if handler.callback else "Unknown"
+                    logger.info(f"  📝 Handler {i}: {handler_name}")
+            
+            # Создание Update объекта
             from aiogram.types import Update
             update = Update(**data)
             
+            # Дополнительная диагностика входящего апдейта
+            if update.message:
+                text = update.message.text or "<non-text message>"
+                user_id = update.message.from_user.id if update.message.from_user else "unknown"
+                logger.info(f"📩 Сообщение от {user_id}: '{text[:50]}...'")
+            elif update.callback_query:
+                logger.info(f"🔘 Callback query: {update.callback_query.data}")
+            else:
+                logger.info(f"❓ Неизвестный тип апдейта: {update}")
+            
             # Обработка обновления
+            logger.info("⚡ Начинаем обработку апдейта...")
             await dp_instance.feed_update(bot_instance, update)
+            logger.info("✅ Апдейт обработан успешно")
             
             return {"ok": True}
             
         except Exception as e:
-            logger.error(f"Ошибка обработки webhook: {e}")
+            logger.error(f"💥 Ошибка обработки webhook: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     async def _set_webhook(self):
