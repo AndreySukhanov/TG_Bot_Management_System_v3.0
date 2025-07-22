@@ -174,23 +174,42 @@ async def init_bot():
             logger.info("🆘 Добавляем минимальный набор обработчиков...")
             await add_minimal_handlers(dp)
         
-        # Проверяем реальную работоспособность обработчиков
+        # Безопасная проверка и регистрация обработчиков
         working_handlers = 0
-        for name, handler_func in handlers_imported.items():
-            if handler_func is not None:
-                try:
-                    # Пробуем зарегистрировать обработчик
-                    handler_func(dp)
-                    working_handlers += 1
-                    logger.info(f"✅ {name} обработчик зарегистрирован успешно")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка регистрации {name}: {e}")
+        logger.info("🔧 НАЧИНАЕМ ПРОВЕРКУ ОБРАБОТЧИКОВ...")
         
-        logger.info(f"📊 Работающих обработчиков: {working_handlers}/{len(handlers_imported)}")
+        try:
+            for name, handler_func in handlers_imported.items():
+                try:
+                    logger.info(f"🔍 Проверяем {name}...")
+                    if handler_func is not None:
+                        logger.info(f"🔍 Пробуем зарегистрировать {name}...")
+                        handler_func(dp)
+                        working_handlers += 1
+                        logger.info(f"✅ {name} обработчик зарегистрирован успешно")
+                    else:
+                        logger.info(f"⚠️ {name} обработчик отсутствует (None)")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка регистрации {name}: {str(e)}")
+                    import traceback
+                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            
+            logger.info(f"📊 Работающих обработчиков: {working_handlers}/{len(handlers_imported)}")
+            
+        except Exception as e:
+            logger.error(f"💥 КРИТИЧЕСКАЯ ОШИБКА В ЦИКЛЕ ОБРАБОТЧИКОВ: {str(e)}")
+            import traceback
+            logger.error(f"💥 Traceback: {traceback.format_exc()}")
         
         # ВСЕГДА используем встроенные обработчики для стабильной работы
-        logger.info("🚀 Активируем встроенные обработчики для полной функциональности")
-        await add_builtin_handlers(dp)
+        try:
+            logger.info("🚀 Активируем встроенные обработчики для полной функциональности")
+            await add_builtin_handlers(dp)
+            logger.info("✅ Встроенные обработчики активированы")
+        except Exception as e:
+            logger.error(f"💥 ОШИБКА ВСТРОЕННЫХ ОБРАБОТЧИКОВ: {str(e)}")
+            import traceback
+            logger.error(f"💥 Traceback: {traceback.format_exc()}")
         
         # Обновляем счетчик после добавления fallback
         final_handlers = len(dp.message.handlers)
