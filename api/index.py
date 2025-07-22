@@ -158,59 +158,8 @@ async def init_bot():
         handlers_imported['financier'] = safe_import_handler('handlers.financier', 'setup_financier_handlers')
         handlers_imported['manager'] = safe_import_handler('handlers.manager', 'setup_manager_handlers')
         
-        # Шаг 3: Регистрация обработчиков
-        logger.info("3️⃣ Начинаем регистрацию обработчиков...")
-        
-        # Регистрируем только те, которые успешно импортированы
-        if handlers_imported['command']:
-            try:
-                handlers_imported['command'](dp)
-                logger.info(f"✓ Command handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации command handlers: {e}")
-        
-        if handlers_imported['voice']:
-            try:
-                handlers_imported['voice'](dp)
-                logger.info(f"✓ Voice handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации voice handlers: {e}")
-        
-        if handlers_imported['marketer']:
-            try:
-                handlers_imported['marketer'](dp)
-                logger.info(f"✓ Marketer handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации marketer handlers: {e}")
-        
-        if handlers_imported['financier']:
-            try:
-                handlers_imported['financier'](dp)
-                logger.info(f"✓ Financier handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации financier handlers: {e}")
-        
-        if handlers_imported['manager']:
-            try:
-                handlers_imported['manager'](dp)
-                logger.info(f"✓ Manager handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации manager handlers: {e}")
-        
-        if handlers_imported['menu']:
-            try:
-                handlers_imported['menu'](dp)
-                logger.info(f"✓ Menu handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации menu handlers: {e}")
-        
-        # Common handlers - ВСЕГДА последними
-        if handlers_imported['common']:
-            try:
-                handlers_imported['common'](dp)
-                logger.info(f"✓ Common handlers зарегистрированы ({len(dp.message.handlers)} total)")
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации common handlers: {e}")
+        # Шаг 3: Регистрация обработчиков объединена с проверкой
+        logger.info("3️⃣ Регистрация объединена с проверкой работоспособности")
         
         # Финальная проверка
         final_handlers = len(dp.message.handlers)
@@ -225,14 +174,23 @@ async def init_bot():
             logger.info("🆘 Добавляем минимальный набор обработчиков...")
             await add_minimal_handlers(dp)
         
-        # Если основные обработчики не загрузились, используем встроенные
-        if successful_imports < 2:  # Меньше 2 успешных импортов
-            logger.warning("⚠️ Основные обработчики не загружены, используем встроенные")
-            await add_builtin_handlers(dp)
-        else:
-            # Если основные загрузились, добавляем fallback на всякий случай
-            logger.info("🔧 Добавляем fallback обработчики...")
-            await add_fallback_handler(dp)
+        # Проверяем реальную работоспособность обработчиков
+        working_handlers = 0
+        for name, handler_func in handlers_imported.items():
+            if handler_func is not None:
+                try:
+                    # Пробуем зарегистрировать обработчик
+                    handler_func(dp)
+                    working_handlers += 1
+                    logger.info(f"✅ {name} обработчик зарегистрирован успешно")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка регистрации {name}: {e}")
+        
+        logger.info(f"📊 Работающих обработчиков: {working_handlers}/{len(handlers_imported)}")
+        
+        # ВСЕГДА используем встроенные обработчики для стабильной работы
+        logger.info("🚀 Активируем встроенные обработчики для полной функциональности")
+        await add_builtin_handlers(dp)
         
         # Обновляем счетчик после добавления fallback
         final_handlers = len(dp.message.handlers)
