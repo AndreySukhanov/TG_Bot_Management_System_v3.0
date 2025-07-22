@@ -1,37 +1,33 @@
 {
-  "routes": [
-    {
-      "src": "/webhook",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/set_webhook",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/webhook_info",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/health",
-      "dest": "/api/index.py"
-    },
-    {
-      "src": "/dashboard(.*)",
-      "dest": "/api/dashboard.py"
-    },
-    {
-      "src": "/",
-      "dest": "/api/index.py"
+  "functions": {
+    "api/*.py": {
+      "runtime": "python3.9"
     }
-  ],
-  "env": {
-    "PYTHONPATH": ".:./utils:./handlers:./db:./nlp"
   },
-  "regions": ["fra1"],
-  "build": {
-    "env": {
-      "PYTHONPATH": ".:./utils:./handlers:./db:./nlp"
+  "rewrites": [
+    {
+      "source": "/webhook",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/set_webhook",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/webhook_info",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/dashboard/(.*)",
+      "destination": "/api/dashboard"
+    },
+    {
+      "source": "/",
+      "destination": "/api/index"
     }
-  }
+  ]
 }
