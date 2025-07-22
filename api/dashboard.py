@@ -457,22 +457,35 @@ class handler(BaseHTTPRequestHandler):
             try {
                 // Загружаем статистику (без токена - используем куки для авторизации)
                 const statsResponse = await fetch('/dashboard/api/stats');
-                if (!statsResponse.ok) throw new Error('Ошибка загрузки статистики');
+                if (!statsResponse.ok) {
+                    throw new Error(`HTTP ${statsResponse.status}: ${statsResponse.statusText}`);
+                }
+                
                 const stats = await statsResponse.json();
                 
+                // Проверяем наличие ошибок в ответе
+                if (stats.error) {
+                    throw new Error(`API Error: ${stats.error}`);
+                }
+                
+                // Проверяем структуру данных
+                if (!stats.balance || !stats.payments || !stats.summary) {
+                    throw new Error('Неполные данные от API');
+                }
+                
                 // Обновляем статистические карточки
-                document.getElementById('currentBalance').textContent = `$${stats.balance.current}`;
+                document.getElementById('currentBalance').textContent = `$${stats.balance.current || 0}`;
                 document.getElementById('balanceStatus').textContent = stats.balance.status === 'healthy' ? '✅ Норма' : '⚠️ Низкий';
                 document.getElementById('balanceStatus').className = `stat-trend ${stats.balance.status === 'healthy' ? 'positive' : 'negative'}`;
                 
-                document.getElementById('pendingCount').textContent = stats.payments.pending_count;
-                document.getElementById('pendingAmount').textContent = `$${stats.payments.pending_amount} на рассмотрении`;
+                document.getElementById('pendingCount').textContent = stats.payments.pending_count || 0;
+                document.getElementById('pendingAmount').textContent = `$${stats.payments.pending_amount || 0} на рассмотрении`;
                 
-                document.getElementById('completedToday').textContent = stats.payments.completed_today;
+                document.getElementById('completedToday').textContent = stats.payments.completed_today || 0;
                 
-                document.getElementById('totalUsers').textContent = stats.summary.total_users;
+                document.getElementById('totalUsers').textContent = stats.summary.total_users || 0;
                 document.getElementById('teamBreakdown').textContent = 
-                    `${stats.summary.marketers}M • ${stats.summary.financiers}F • ${stats.summary.managers}R`;
+                    `${stats.summary.marketers || 0}M • ${stats.summary.financiers || 0}F • ${stats.summary.managers || 0}R`;
                 
                 // Загружаем платежи
                 const paymentsResponse = await fetch('/dashboard/api/payments');
@@ -565,62 +578,119 @@ class handler(BaseHTTPRequestHandler):
     def _get_dashboard_stats(self):
         """Получение статистики для дашборда"""
         try:
-            if not Config:
-                return {"error": "Config not available"}
-            
-            config = Config()
-            
             # Получаем текущий баланс
             current_balance = self._get_current_balance()
             
             # Получаем ожидающие платежи
             pending_payments = self._get_pending_payments()
-            total_pending = sum(payment["amount"] for payment in pending_payments)
+            total_pending = sum(payment.get("amount", 0) for payment in pending_payments)
             pending_count = len(pending_payments)
             
             # Получаем платежи за сегодня
             completed_today = self._get_payments_today()
             
+            # Получаем количество пользователей из переменных окружения
+            marketers_count = len(os.getenv('MARKETERS', '').split(',')) if os.getenv('MARKETERS') else 0
+            financiers_count = len(os.getenv('FINANCIERS', '').split(',')) if os.getenv('FINANCIERS') else 0
+            managers_count = len(os.getenv('MANAGERS', '').split(',')) if os.getenv('MANAGERS') else 0
+            
             return {
                 "balance": {
-                    "current": round(current_balance, 2),
-                    "threshold": config.LOW_BALANCE_THRESHOLD,
-                    "status": "healthy" if current_balance >= config.LOW_BALANCE_THRESHOLD else "low"
+                    "current": round(float(current_balance), 2),
+                    "threshold": 100.0,
+                    "status": "healthy" if float(current_balance) >= 100.0 else "low"
                 },
                 "payments": {
-                    "pending_count": pending_count,
-                    "pending_amount": round(total_pending, 2),
-                    "completed_today": completed_today
+                    "pending_count": int(pending_count),
+                    "pending_amount": round(float(total_pending), 2),
+                    "completed_today": int(completed_today)
                 },
                 "summary": {
-                    "total_users": len(config.MARKETERS) + len(config.FINANCIERS) + len(config.MANAGERS),
-                    "marketers": len(config.MARKETERS),
-                    "financiers": len(config.FINANCIERS),
-                    "managers": len(config.MANAGERS)
+                    "total_users": marketers_count + financiers_count + managers_count,
+                    "marketers": marketers_count,
+                    "financiers": financiers_count,
+                    "managers": managers_count
                 }
             }
         except Exception as e:
-            return {"error": str(e)}
+            return {
+                "error": str(e),
+                "balance": {
+                    "current": 0.0,
+                    "threshold": 100.0,
+                    "status": "unknown"
+                },
+                "payments": {
+                    "pending_count": 0,
+                    "pending_amount": 0.0,
+                    "completed_today": 0
+                },
+                "summary": {
+                    "total_users": 0,
+                    "marketers": 0,
+                    "financiers": 0,
+                    "managers": 0
+                }
+            }
     
     def _get_current_balance(self):
         """Получение текущего баланса"""
         try:
-            config = Config()
-            db_path = config.DATABASE_PATH
+            # Используем путь к базе данных из переменных окружения или дефолтный
+            db_path = os.getenv('DATABASE_PATH', '/tmp/bot.db')
+            
+            # Проверяем существование файла базы данных
+            if not os.path.exists(db_path):
+                # Создаем базу данных если её нет
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS balance (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        balance REAL DEFAULT 0.0,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cursor.execute("INSERT INTO balance (balance) VALUES (0.0)")
+                conn.commit()
+                conn.close()
+                return 0.0
+            
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT balance FROM balance ORDER BY id DESC LIMIT 1")
             result = cursor.fetchone()
             conn.close()
-            return result[0] if result else 0.0
-        except:
+            return float(result[0]) if result else 0.0
+        except Exception as e:
+            print(f"Ошибка получения баланса: {e}")
             return 0.0
     
     def _get_pending_payments(self):
         """Получение ожидающих платежей"""
         try:
-            config = Config()
-            db_path = config.DATABASE_PATH
+            db_path = os.getenv('DATABASE_PATH', '/tmp/bot.db')
+            
+            if not os.path.exists(db_path):
+                # Создаем таблицу платежей если её нет
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS payments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        service_name TEXT NOT NULL,
+                        amount REAL NOT NULL,
+                        project_name TEXT,
+                        payment_method TEXT,
+                        status TEXT DEFAULT 'pending',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        marketer_id INTEGER
+                    )
+                ''')
+                conn.commit()
+                conn.close()
+                return []
+            
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -630,14 +700,18 @@ class handler(BaseHTTPRequestHandler):
                 payments.append(dict(row))
             conn.close()
             return payments
-        except:
+        except Exception as e:
+            print(f"Ошибка получения платежей: {e}")
             return []
     
     def _get_payments_today(self):
         """Получение количества платежей за сегодня"""
         try:
-            config = Config()
-            db_path = config.DATABASE_PATH
+            db_path = os.getenv('DATABASE_PATH', '/tmp/bot.db')
+            
+            if not os.path.exists(db_path):
+                return 0
+                
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             cursor.execute("""
@@ -647,15 +721,19 @@ class handler(BaseHTTPRequestHandler):
             """)
             result = cursor.fetchone()
             conn.close()
-            return result[0] if result else 0
-        except:
+            return int(result[0]) if result else 0
+        except Exception as e:
+            print(f"Ошибка получения платежей за сегодня: {e}")
             return 0
     
     def _get_payments_data(self):
         """Получение данных о платежах"""
         try:
-            config = Config()
-            db_path = config.DATABASE_PATH
+            db_path = os.getenv('DATABASE_PATH', '/tmp/bot.db')
+            
+            if not os.path.exists(db_path):
+                return {"payments": []}
+            
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -676,16 +754,41 @@ class handler(BaseHTTPRequestHandler):
             conn.close()
             return {"payments": payments}
         except Exception as e:
+            print(f"Ошибка получения данных о платежах: {e}")
             return {"error": str(e), "payments": []}
     
     def _get_balance_history(self):
         """Получение истории баланса"""
         try:
-            config = Config()
-            db_path = config.DATABASE_PATH
+            db_path = os.getenv('DATABASE_PATH', '/tmp/bot.db')
+            
+            if not os.path.exists(db_path):
+                return {"history": []}
+            
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            
+            # Сначала проверим, существует ли таблица
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='balance_history'
+            """)
+            
+            if not cursor.fetchone():
+                # Создаем таблицу истории баланса
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS balance_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        amount REAL NOT NULL,
+                        description TEXT,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        user_id INTEGER
+                    )
+                ''')
+                conn.commit()
+                conn.close()
+                return {"history": []}
             
             cursor.execute("""
                 SELECT amount, description, timestamp, user_id
@@ -701,6 +804,7 @@ class handler(BaseHTTPRequestHandler):
             conn.close()
             return {"history": history}
         except Exception as e:
+            print(f"Ошибка получения истории баланса: {e}")
             return {"error": str(e), "history": []}
     
     def _send_response(self, status_code, data):
